@@ -175,10 +175,10 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
 
 int Arm7Tdmi::ExecuteArmInstruction(Bus& bus, uint32_t opcode)
 {
-    panic(fmt::format("Unknown instruction {:#X}!", opcode));
+    panic(fmt::format("Unknown ARM instruction {:#X}!", opcode));
 }
 
 int Arm7Tdmi::ExecuteThumbInstruction(Bus& bus, uint16_t opcode)
 {
-    panic(fmt::format("Unknown instruction {:#X}!", opcode));
+    panic(fmt::format("Unknown THUMB instruction {:#X}!", opcode));
 }

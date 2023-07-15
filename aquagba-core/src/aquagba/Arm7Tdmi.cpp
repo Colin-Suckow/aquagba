@@ -145,6 +145,8 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
         // Fetch a 32 bit ARM instruction
         uint32_t opcode = bus.Read32(current_pc);
 
+        fmt::println("Executing ARM instruction at pc {:#X}...", current_pc);
+
         // Execute
         cycles = ExecuteArmInstruction(bus, opcode);
     }
@@ -152,6 +154,8 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
     {
         // Fetch a 16 bit THUMB instruction
         uint16_t opcode = bus.Read16(current_pc);
+
+        fmt::println("Executing THUMB instruction at pc {:#X}...", current_pc);
 
         // Execute
         cycles = ExecuteThumbInstruction(bus, opcode);
@@ -175,10 +179,36 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
 
 int Arm7Tdmi::ExecuteArmInstruction(Bus& bus, uint32_t opcode)
 {
-    panic(fmt::format("Unknown ARM instruction {:#X}!", opcode));
+    // Branch on those three bits to kick off decoding
+    switch ((opcode >> 25) & 0b111)
+    {
+    case 0b101:
+        return OpArmBranch(bus, opcode);
+    default:
+        panic(fmt::format("Unknown ARM instruction {:#X}!", opcode));
+    }
 }
 
 int Arm7Tdmi::ExecuteThumbInstruction(Bus& bus, uint16_t opcode)
 {
     panic(fmt::format("Unknown THUMB instruction {:#X}!", opcode));
+}
+
+// ARM instructions
+int Arm7Tdmi::OpArmBranch(Bus& bus, uint32_t opcode)
+{
+    bool should_link = GetBit(opcode, 24);
+    int32_t offset = SignExtend<int32_t, 26>(static_cast<int32_t>((opcode & 0xFFFFFF) << 2));
+    uint32_t old_pc = ReadRegisterDirect(RegisterName::r15);
+    uint32_t new_pc = old_pc + offset;
+    // Add 4 to account for the prefetch and the 4 that will be added after execution
+    WriteRegisterDirect(RegisterName::r15, new_pc + 4);
+
+    if (should_link)
+    {
+        // Add 4 to the old pc so we return to the next instruction
+        WriteRegisterDirect(RegisterName::r14, old_pc + 4);
+    }
+
+    return 1;
 }

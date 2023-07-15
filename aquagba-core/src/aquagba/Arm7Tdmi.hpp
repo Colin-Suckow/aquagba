@@ -148,6 +148,8 @@ public:
     int ExecuteThumbInstruction(Bus& bus, uint16_t opcode);
 
 private:
+    // Instructions
+    int OpArmBranch(Bus& bus, uint32_t opcode);
     // Map thumb register to the real register
     RegisterName MapRegister(RegisterName reg);
 

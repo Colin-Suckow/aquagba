@@ -3,6 +3,7 @@
 #include <array>
 #include <stdint.h>
 #include <unordered_map>
+#include "aquagba/bus.hpp"
 
 namespace aquagba
 {
@@ -130,6 +131,8 @@ struct ProgramStatus
     }
 };
 
+
+
 class Arm7Tdmi
 {
 public:
@@ -138,6 +141,11 @@ public:
     void Reset();
     void WriteRegisterDirect(RegisterName reg, uint32_t value);
     uint32_t ReadRegisterDirect(RegisterName reg);
+
+    // Fetch and run the next instruction. Returns the number of cycles it took
+    int RunNextInstruction(Bus& bus);
+    int ExecuteArmInstruction(Bus& bus, uint32_t opcode);
+    int ExecuteThumbInstruction(Bus& bus, uint16_t opcode);
 
 private:
     // Map thumb register to the real register

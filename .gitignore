@@ -1,1 +1,3 @@
 build/
+.vscode/
+*/gba_bios.bin

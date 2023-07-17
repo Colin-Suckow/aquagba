@@ -88,6 +88,14 @@ enum class ProcessorMode
     System = 0b11111
 };
 
+enum class ArmShiftType
+{
+    LogicalLeft = 0b00,
+    LogicalRight = 0b01,
+    ArithRight = 0b10,
+    RotRight = 0b11
+};
+
 struct ProgramStatus
 {
     ProcessorMode mode;
@@ -139,21 +147,29 @@ public:
     Arm7Tdmi();
 
     void Reset();
-    void WriteRegisterDirect(RegisterName reg, uint32_t value);
-    uint32_t ReadRegisterDirect(RegisterName reg);
+    uint32_t& GetRegisterDirect(RegisterName reg);
+    uint32_t& GetRegisterNumber(uint8_t reg_num);
 
     // Fetch and run the next instruction. Returns the number of cycles it took
     int RunNextInstruction(Bus& bus);
-    int ExecuteArmInstruction(Bus& bus, uint32_t opcode);
-    int ExecuteThumbInstruction(Bus& bus, uint16_t opcode);
 
 private:
     // Instructions
     int OpArmBranch(Bus& bus, uint32_t opcode);
+    int OpArmCmp(Bus& bus, uint32_t opcode);
+
+    // Utils
+    // Checks cond and returns true if the instruction should be executing. False if should skip
+    bool ArmCheckCond(uint8_t cond);
+
+    uint32_t FetchDataProcessingOper2(const uint32_t opcode, const bool set_carry);
+    
+    int ExecuteArmInstruction(Bus& bus, uint32_t opcode);
+    int ExecuteThumbInstruction(Bus& bus, uint16_t opcode);
+
     // Map thumb register to the real register
     RegisterName MapRegister(RegisterName reg);
 
-    ProcessorMode mCurrentMode;
     std::array<uint32_t, 37> mRegisters;
     std::unordered_map<ProcessorMode, ProgramStatus> mSavedPsrs;
     ProgramStatus mCurrentPsr;

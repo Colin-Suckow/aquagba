@@ -2,6 +2,7 @@
 #include "aquagba/bus.hpp"
 #include "aquagba/util.hpp"
 #include "fmt/format.h"
+#include <bit>
 
 using namespace aquagba;
 
@@ -13,54 +14,26 @@ Arm7Tdmi::Arm7Tdmi()
 void Arm7Tdmi::Reset()
 {
     // Write old PC to r14_svc
-    WriteRegisterDirect(RegisterName::r15, ReadRegisterDirect(RegisterName::r14_svc));
+    GetRegisterDirect(RegisterName::r15) = GetRegisterDirect(RegisterName::r14_svc);
 
     // Write old PSR to spsr_svc
-    WriteRegisterDirect(RegisterName::spsr_svc, ReadRegisterDirect(RegisterName::cpsr));
+    GetRegisterDirect(RegisterName::spsr_svc) = GetRegisterDirect(RegisterName::cpsr);
 
     // Enter supervisor mode
-    mCurrentMode = ProcessorMode::Supervisor;
+    mCurrentPsr.mode = ProcessorMode::Supervisor;
 
     // Set irq and fiq disable bits
     mCurrentPsr.irq_disable = true;
     mCurrentPsr.fiq_disable = true;
 
     // Reset PC to 0
-    WriteRegisterDirect(RegisterName::r15, 0);
+    GetRegisterDirect(RegisterName::r15) = 0;
 
     // Switch to ARM mode
     mCurrentPsr.state = OperatingState::Arm;
 }
 
-void Arm7Tdmi::WriteRegisterDirect(RegisterName reg, uint32_t value)
-{
-    switch (reg)
-    {
-    case RegisterName::cpsr:
-        mCurrentPsr = ProgramStatus::FromBinary(value);
-        break;
-    case RegisterName::spsr_fiq:
-        mSavedPsrs[ProcessorMode::Fiq] = ProgramStatus::FromBinary(value);
-        break;
-    case RegisterName::spsr_svc:
-        mSavedPsrs[ProcessorMode::Supervisor] = ProgramStatus::FromBinary(value);
-        break;
-    case RegisterName::spsr_abt:
-        mSavedPsrs[ProcessorMode::Abort] = ProgramStatus::FromBinary(value);
-        break;
-    case RegisterName::spsr_irq:
-        mSavedPsrs[ProcessorMode::Irq] = ProgramStatus::FromBinary(value);
-        break;
-    case RegisterName::spsr_und:
-        mSavedPsrs[ProcessorMode::Undefined] = ProgramStatus::FromBinary(value);
-        break;
-    default:
-         mRegisters[static_cast<int>(MapRegister(reg))] = value;
-         break;
-    }
-}
-
-uint32_t Arm7Tdmi::ReadRegisterDirect(RegisterName reg)
+uint32_t& Arm7Tdmi::GetRegisterDirect(RegisterName reg)
 {
     switch (reg)
     {
@@ -78,6 +51,51 @@ uint32_t Arm7Tdmi::ReadRegisterDirect(RegisterName reg)
         return mSavedPsrs[ProcessorMode::Undefined].AsBinary();
     default:
          return mRegisters[static_cast<int>(MapRegister(reg))];
+    }
+}
+
+uint32_t& Arm7Tdmi::GetRegisterNumber(uint8_t reg_num)
+{
+    if (reg_num <= 7 || reg_num == 15)
+    {
+        return mRegisters[reg_num];
+    }
+    else if (reg_num <= 12)
+    {
+        //r8-r12 can be either normal or fiq
+        if (mCurrentPsr.mode == ProcessorMode::Fiq)
+        {
+            return mRegisters[reg_num + 8];
+        }
+        else
+        {
+            return mRegisters[reg_num];
+        }
+    }
+    else if (reg_num <= 14)
+    {
+        switch (mCurrentPsr.mode)
+        {
+        case ProcessorMode::System:
+        case ProcessorMode::User:
+            return mRegisters[reg_num];
+        case ProcessorMode::Fiq:
+            return mRegisters[reg_num + 8];
+        case ProcessorMode::Supervisor:
+            return mRegisters[reg_num + 10];
+        case ProcessorMode::Abort:
+            return mRegisters[reg_num + 12];
+        case ProcessorMode::Irq:
+            return mRegisters[reg_num + 14];
+        case ProcessorMode::Undefined:
+            return mRegisters[reg_num + 16];
+        default:
+            panic(fmt::format("Arm7Tdmi::GetRegisterNumber; Unknown processor mode! mode = {}", mCurrentPsr.mode));
+        }
+    }
+    else
+    {
+        panic(fmt::format("Arm7Tdmi::GetRegisterNumber; Unknown register number! num = {}", reg_num));
     }
 }
 
@@ -138,17 +156,25 @@ RegisterName Arm7Tdmi::MapRegister(RegisterName reg)
 int Arm7Tdmi::RunNextInstruction(Bus& bus)
 {
     int cycles;
-    uint32_t current_pc = ReadRegisterDirect(RegisterName::r15);
+    uint32_t current_pc = GetRegisterDirect(RegisterName::r15);
     // Fetch next opcode
     if (mCurrentPsr.state == OperatingState::Arm)
     {
         // Fetch a 32 bit ARM instruction
         uint32_t opcode = bus.Read32(current_pc);
 
-        fmt::println("Executing ARM instruction at pc {:#X}...", current_pc);
+        // Check the cond field and execute if true
+        if (ArmCheckCond((opcode >> 28) & 0b1111))
+        {
+            fmt::println("Executing ARM instruction at pc {:#X}...", current_pc);
 
-        // Execute
-        cycles = ExecuteArmInstruction(bus, opcode);
+            // Execute
+            cycles = ExecuteArmInstruction(bus, opcode);
+        }
+        else
+        {
+            fmt::println("Skipping ARM instruction at {:#X} because cond was false...", current_pc);
+        }
     }
     else
     {
@@ -164,14 +190,14 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
     // TODO figure out how to increment PC after arm/thumb transition. This is probably good enough for now
     // Check PSR again because executing an instruction may have changed it
     // Fetch PC again too because the executed instruction may have been a jump
-    current_pc = ReadRegisterDirect(RegisterName::r15);
+    current_pc = GetRegisterDirect(RegisterName::r15);
     if (mCurrentPsr.state == OperatingState::Arm)
     {
-        WriteRegisterDirect(RegisterName::r15, current_pc + 4);
+        GetRegisterDirect(RegisterName::r15) = current_pc + 4;
     }
     else
     {
-        WriteRegisterDirect(RegisterName::r15, current_pc + 2);
+        GetRegisterDirect(RegisterName::r15) = current_pc + 2;
     }
     
     return cycles;
@@ -179,14 +205,27 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
 
 int Arm7Tdmi::ExecuteArmInstruction(Bus& bus, uint32_t opcode)
 {
-    // Branch on those three bits to kick off decoding
-    switch ((opcode >> 25) & 0b111)
+    if (((opcode >> 25) & 0b111) == 0b101)
     {
-    case 0b101:
         return OpArmBranch(bus, opcode);
-    default:
-        panic(fmt::format("Unknown ARM instruction {:#X}!", opcode));
     }
+    else if (((opcode >> 26) & 0b11) == 0)
+    {
+        // Data processing instructions
+        uint8_t data_proc_opcode = ((opcode >> 21) & 0b1111);
+
+        switch (data_proc_opcode)
+        {
+        case 0b1010:
+            return OpArmCmp(bus, opcode);
+        default:
+            panic(fmt::format("Unknown ARM data processing instruction! Opcode = {:#b}", data_proc_opcode));
+        }
+    }
+
+
+    // If we get down here then decoding was unable to find an instruction
+    panic(fmt::format("Unknown ARM instruction {:#X}!", opcode));
 }
 
 int Arm7Tdmi::ExecuteThumbInstruction(Bus& bus, uint16_t opcode)
@@ -194,20 +233,139 @@ int Arm7Tdmi::ExecuteThumbInstruction(Bus& bus, uint16_t opcode)
     panic(fmt::format("Unknown THUMB instruction {:#X}!", opcode));
 }
 
+bool Arm7Tdmi::ArmCheckCond(uint8_t cond)
+{
+    switch (cond)
+    {
+    case 0b0000:
+        return mCurrentPsr.zero;
+    case 0b0001:
+        return !mCurrentPsr.zero;
+    case 0b0010:
+        return mCurrentPsr.carry;
+    case 0b0011:
+        return !mCurrentPsr.carry;
+    case 0b0100:
+        return mCurrentPsr.negative;
+    case 0b0101:
+        return !mCurrentPsr.negative;
+    case 0b0110:
+        return mCurrentPsr.overflow;
+    case 0b0111:
+        return !mCurrentPsr.overflow;
+    case 0b1000:
+        return mCurrentPsr.carry && !mCurrentPsr.zero;
+    case 0b1001:
+        return !mCurrentPsr.carry || mCurrentPsr.zero;
+    case 0b1010:
+        return mCurrentPsr.negative == mCurrentPsr.overflow;
+    case 0b1011:
+        return mCurrentPsr.negative != mCurrentPsr.overflow;
+    case 0b1100:
+        return !mCurrentPsr.zero && (mCurrentPsr.negative == mCurrentPsr.overflow);
+    case 0b1101:
+        return mCurrentPsr.zero || (mCurrentPsr.negative != mCurrentPsr.overflow);
+    case 0b1110:
+        return true;
+    default:
+        panic(fmt::format("Unknown ARM cond field value = {:#X}", cond));
+    }
+}
+
+uint32_t Arm7Tdmi::FetchDataProcessingOper2(const uint32_t opcode, const bool set_carry)
+{
+    bool operand_is_immediate = GetBit(opcode, 25);
+    uint32_t oper2;
+
+    if (operand_is_immediate)
+    {
+        uint32_t imm = opcode & 0xFF;
+        
+        // Decode and execute shift on imm
+        uint32_t rotate = ((opcode >> 8) & 0xF) * 2; // Rotate is doubled because the manual said so. See 4.5.3
+
+        oper2 = std::rotr(imm, rotate);
+    }
+    else
+    {
+        // Register op2
+        uint8_t reg_num = opcode & 0xF;
+        uint32_t shift = (opcode >> 4) & 0xFF;
+        ArmShiftType type = static_cast<ArmShiftType>((shift >> 1) & 0b11);
+        uint8_t shift_amount;
+        bool register_shift = GetBit(shift, 0);
+        
+        if (register_shift)
+        {
+            // Register shift
+            uint8_t shift_reg_num = (shift >> 8) & 0xF;
+            shift_amount = static_cast<uint8_t>(GetRegisterNumber(shift_reg_num) & 0xFF);
+        }
+        else
+        {
+            // Immediate shift
+            shift_amount = static_cast<uint8_t>((shift >> 5) & 0b11111);
+        }
+
+        uint32_t shifted = GetRegisterNumber(reg_num);
+
+        switch (type)
+        {
+        case ArmShiftType::ArithRight:
+            shifted = static_cast<int32_t>(shifted) >> shift_amount;
+            break;
+        case ArmShiftType::LogicalRight:
+            shifted = shifted >> shift_amount;
+            break;
+        case ArmShiftType::LogicalLeft:
+            shifted = shift << shift_amount;
+            break;
+        case ArmShiftType::RotRight:
+            shifted = std::rotr(shift, shift_amount);
+            break;
+        default:
+            panic(fmt::format("Unknown shift type! type = {}", type));
+        };
+
+        oper2 = shifted;
+    }
+    return oper2;
+}
+
 // ARM instructions
 int Arm7Tdmi::OpArmBranch(Bus& bus, uint32_t opcode)
 {
     bool should_link = GetBit(opcode, 24);
     int32_t offset = SignExtend<int32_t, 26>(static_cast<int32_t>((opcode & 0xFFFFFF) << 2));
-    uint32_t old_pc = ReadRegisterDirect(RegisterName::r15);
+    uint32_t old_pc = GetRegisterDirect(RegisterName::r15);
     uint32_t new_pc = old_pc + offset;
     // Add 4 to account for the prefetch and the 4 that will be added after execution
-    WriteRegisterDirect(RegisterName::r15, new_pc + 4);
+    GetRegisterDirect(RegisterName::r15) = new_pc + 4;
 
     if (should_link)
     {
         // Add 4 to the old pc so we return to the next instruction
-        WriteRegisterDirect(RegisterName::r14, old_pc + 4);
+        GetRegisterDirect(RegisterName::r14) = old_pc + 4;
+    }
+
+    return 1;
+}
+
+int Arm7Tdmi::OpArmCmp(Bus& bus, uint32_t opcode)
+{
+    bool set_condition_codes = GetBit(opcode, 20);
+
+    uint32_t oper1 = GetRegisterNumber((opcode >> 16) & 0b1111);
+    uint32_t oper2 = FetchDataProcessingOper2(opcode, true);
+    
+    uint32_t result = oper1 - oper2;
+
+    if (set_condition_codes)
+    {
+        // Carry is set by FetchDataProcessingOper2 because this is a logical instruction
+        mCurrentPsr.zero = result == 0;
+        mCurrentPsr.negative = GetBit(result, 31);
+        mCurrentPsr.overflow = (GetBit(oper1, 31) != GetBit(oper2, 31)) && GetBit(oper2, 31) == GetBit(result, 31);
     }
 
     return 1;

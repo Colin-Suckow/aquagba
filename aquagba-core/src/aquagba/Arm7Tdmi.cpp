@@ -35,23 +35,7 @@ void Arm7Tdmi::Reset()
 
 uint32_t& Arm7Tdmi::GetRegisterDirect(RegisterName reg)
 {
-    switch (reg)
-    {
-    case RegisterName::cpsr:
-        return mCurrentPsr.AsBinary();
-    case RegisterName::spsr_fiq:
-        return mSavedPsrs[ProcessorMode::Fiq].AsBinary();
-    case RegisterName::spsr_svc:
-        return mSavedPsrs[ProcessorMode::Supervisor].AsBinary();
-    case RegisterName::spsr_abt:
-        return mSavedPsrs[ProcessorMode::Abort].AsBinary();
-    case RegisterName::spsr_irq:
-        return mSavedPsrs[ProcessorMode::Irq].AsBinary();
-    case RegisterName::spsr_und:
-        return mSavedPsrs[ProcessorMode::Undefined].AsBinary();
-    default:
-         return mRegisters[static_cast<int>(MapRegister(reg))];
-    }
+    return mRegisters[static_cast<int>(MapRegister(reg))];
 }
 
 uint32_t& Arm7Tdmi::GetRegisterNumber(uint8_t reg_num)

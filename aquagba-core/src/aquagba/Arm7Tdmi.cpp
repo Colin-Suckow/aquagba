@@ -74,7 +74,7 @@ uint32_t& Arm7Tdmi::GetRegisterNumber(uint8_t reg_num)
         case ProcessorMode::Undefined:
             return mRegisters[reg_num + 16];
         default:
-            panic(fmt::format("Arm7Tdmi::GetRegisterNumber; Unknown processor mode! mode = {}", mCurrentPsr.mode));
+            panic(fmt::format("Arm7Tdmi::GetRegisterNumber; Unknown processor mode! mode = {}", static_cast<uint32_t>(mCurrentPsr.mode)));
         }
     }
     else
@@ -308,7 +308,7 @@ uint32_t Arm7Tdmi::FetchDataProcessingOper2(const uint32_t opcode, const bool se
             shifted = std::rotr(shift, shift_amount);
             break;
         default:
-            panic(fmt::format("Unknown shift type! type = {}", type));
+            panic(fmt::format("Unknown shift type! type = {}", static_cast<uint32_t>(type)));
         };
 
         oper2 = shifted;

@@ -150,7 +150,7 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
         // Check the cond field and execute if true
         if (ArmCheckCond((opcode >> 28) & 0b1111))
         {
-            fmt::println("Executing ARM instruction at pc {:#X}...", current_pc);
+            fmt::println("Executing ARM instruction at pc {:#X}... opcode = {:#X}", current_pc, opcode);
 
             // Execute
             cycles = ExecuteArmInstruction(bus, opcode);
@@ -193,9 +193,29 @@ int Arm7Tdmi::ExecuteArmInstruction(Bus& bus, uint32_t opcode)
     {
         return OpArmBranch(bus, opcode);
     }
+    else if (((opcode >> 4) & 0xFFFFFF) == 0x12FFF1)
+    {
+        return OpArmBranchEx(bus, opcode);
+    }
+
     else if (((opcode >> 26) & 0b11) == 0)
     {
-        return OpArmDataProc(bus, opcode);
+        if ((opcode & 0xFFF) == 0 && ((opcode >> 16) & 0x3F) == 0xF)
+        {
+            panic("MRS");
+        }
+        else if (((opcode >> 4) & 0x3FFFF) == 0x29F00)
+        {
+            return OpArmMsrReg(bus, opcode);
+        }
+        else if (((opcode >> 12) & 0x3FF) == 0x28F)
+        {
+            panic("MSR Flag");
+        }
+        else
+        {
+            return OpArmDataProc(bus, opcode);
+        }
     }
     else if (((opcode >> 26) & 0b11) == 0b01)
     {
@@ -327,6 +347,8 @@ int Arm7Tdmi::OpArmBranch(Bus& bus, uint32_t opcode)
         GetRegisterDirect(RegisterName::r14) = old_pc + 4;
     }
 
+    fmt::println("Branched to {:#X}", new_pc + 8);
+
     return 1;
 }
 
@@ -356,9 +378,24 @@ int Arm7Tdmi::OpArmDataProc(Bus& bus, uint32_t opcode)
         break;
     }
     case 0b1001:
+    {
         result = oper1 ^ oper2;
         fmt::println("Executing TEQ. {} ^ {} = {}", oper1, oper2, result);
         break;
+    }
+    case 0b1011:
+    {
+        result = oper1 + oper2;
+        fmt::println("Executing CMN. {} + {} = {}", oper1, oper2, result);
+        break;
+    }
+    case 0b0100:
+    {
+        result = oper1 + oper2;
+        result_reg = result;
+        fmt::println("Executing ADD. r{} {} + {} = r{} {}", (opcode >> 16) & 0xF, oper1, oper2, (opcode >> 12) & 0xF, result);
+        break;
+    }
     default:
         panic(fmt::format("Unknown ARM data processing instruction! Opcode = {:#b}", data_proc_opcode));
     }
@@ -444,13 +481,14 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
         {
             // load byte from memory
             // TODO Handle unaligned reads
-            if (addr % 4 != 0) panic(fmt::format("Unaligned read! Addr {} pc {}", addr, GetRegisterDirect(RegisterName::r15)));
-            source_dest_reg = bus.Read32(addr);
+            source_dest_reg = bus.Read8(addr);
         }
         else
         {
             // load word from memory
-            source_dest_reg = bus.Read8(addr);
+            // TODO Handle unaligned reads
+            if (addr % 4 != 0) panic(fmt::format("Unaligned read! Addr {} pc {}", addr, GetRegisterDirect(RegisterName::r15)));
+            source_dest_reg = bus.Read32(addr);
         }
     }
     else
@@ -458,14 +496,14 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
         if (byte_bit)
         {
             // store byte to memeory
-            panic("Tried to write word, not implemented");
+            bus.Write8(addr, source_dest_reg & 0xF);
         }
         else
         {
             // store word to memory
             // TODO Handle unaligned writes
             if (addr % 4 != 0) panic(fmt::format("Unaligned write! Addr {} pc {}", addr, GetRegisterDirect(RegisterName::r15)));
-            panic("Tried to write byte, not implemented");
+            bus.Write32(addr, source_dest_reg);
         }
     }
 
@@ -491,4 +529,43 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
     }
 
     return 1;
+}
+
+int Arm7Tdmi::OpArmBranchEx(Bus& bus, uint32_t opcode)
+{
+    uint32_t target = GetRegisterNumber(opcode & 0xF) & 0xFE;
+    bool thumb = GetBit(GetRegisterNumber(opcode & 0xF), 0);
+
+    // branch
+    GetRegisterDirect(RegisterName::r15) = target;
+
+    if (thumb)
+    {
+        // Change to thumb mode
+        mCurrentPsr.state = OperatingState::Thumb;
+    }
+    else
+    {
+        // Change to arm mode
+        mCurrentPsr.state = OperatingState::Arm;
+    }
+
+    return 1;
+}
+
+int Arm7Tdmi::OpArmMsrReg(Bus& bus, uint32_t opcode)
+{
+    bool dest_spsr = GetBit(opcode, 22);
+    uint32_t source = GetRegisterNumber(opcode & 0xF);
+
+    if (dest_spsr)
+    {
+        // Use the spsr for the current mode
+        mSavedPsrs[mCurrentPsr.mode] = ProgramStatus::FromBinary(source);
+    }
+    else
+    {
+        // use the current psr
+        mCurrentPsr = ProgramStatus::FromBinary(source);
+    }
 }

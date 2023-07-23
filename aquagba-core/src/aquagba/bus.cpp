@@ -46,9 +46,45 @@ uint8_t Bus::Read8(uint32_t addr)
     {
         return mBiosRom.Read8(addr);
     }
+    else if (addr >= 0x4000204 && addr <= 0x4000800)
+    {
+        return mSystemRegs.Read8(addr);
+    }
     else
     {
         panic(fmt::format("Tried to read8 invalid address {:#X}", addr));
+    }
+}
+
+void Bus::Write32(uint32_t addr, uint32_t val)
+{
+    if (addr < 0x3FFF)
+    {
+        panic(fmt::format("Tried to write32 to rom. addr = {:#X}", addr));
+    }
+    else if (addr >= 0x4000204 && addr <= 0x4000800)
+    {
+        return mSystemRegs.Write32(addr, val);
+    }
+    else
+    {
+        panic(fmt::format("Tried to write32 invalid address {:#X} val {:#X}", addr, val));
+    }
+}
+
+void Bus::Write8(uint32_t addr, uint8_t val)
+{
+    if (addr < 0x3FFF)
+    {
+        panic(fmt::format("Tried to write8 to rom. addr = {:#X}", addr));
+    }
+    else if (addr >= 0x4000204 && addr <= 0x4000800)
+    {
+        return mSystemRegs.Write8(addr, val);
+    }
+    else
+    {
+        panic(fmt::format("Tried to write8 invalid address {:#X} val {:#X}", addr, val));
     }
 }
 

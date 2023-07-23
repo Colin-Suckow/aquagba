@@ -355,6 +355,10 @@ int Arm7Tdmi::OpArmDataProc(Bus& bus, uint32_t opcode)
         fmt::println("Executing MOV. {:#X} -> reg({})", oper2, (opcode >> 12) & 0xF);
         break;
     }
+    case 0b1001:
+        result = oper1 ^ oper2;
+        fmt::println("Executing TEQ. {} ^ {} = {}", oper1, oper2, result);
+        break;
     default:
         panic(fmt::format("Unknown ARM data processing instruction! Opcode = {:#b}", data_proc_opcode));
     }

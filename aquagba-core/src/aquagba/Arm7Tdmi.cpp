@@ -195,16 +195,7 @@ int Arm7Tdmi::ExecuteArmInstruction(Bus& bus, uint32_t opcode)
     }
     else if (((opcode >> 26) & 0b11) == 0)
     {
-        // Data processing instructions
-        uint8_t data_proc_opcode = ((opcode >> 21) & 0b1111);
-
-        switch (data_proc_opcode)
-        {
-        case 0b1010:
-            return OpArmCmp(bus, opcode);
-        default:
-            panic(fmt::format("Unknown ARM data processing instruction! Opcode = {:#b}", data_proc_opcode));
-        }
+        return OpArmDataProc(bus, opcode);
     }
 
 
@@ -335,15 +326,35 @@ int Arm7Tdmi::OpArmBranch(Bus& bus, uint32_t opcode)
     return 1;
 }
 
-int Arm7Tdmi::OpArmCmp(Bus& bus, uint32_t opcode)
+int Arm7Tdmi::OpArmDataProc(Bus& bus, uint32_t opcode)
 {
     bool set_condition_codes = GetBit(opcode, 20);
+    uint8_t data_proc_opcode = ((opcode >> 21) & 0b1111);
 
-    uint32_t oper1 = GetRegisterNumber((opcode >> 16) & 0b1111);
+    uint32_t oper1 = GetRegisterNumber((opcode >> 16) & 0xF);
     uint32_t oper2 = FetchDataProcessingOper2(opcode, true);
-    
-    uint32_t result = oper1 - oper2;
+    uint32_t result_reg = GetRegisterNumber((opcode >> 12) & 0xF);
+    uint32_t result;
 
+    switch (data_proc_opcode)
+    {
+    case 0b1010:
+    {
+        result = oper1 - oper2;
+        fmt::println("Executing CMP. {} - {} = {}", oper1, oper2, result);
+        break;
+    }
+    case 0b1101:
+    {
+        result = oper2;
+        result_reg = oper2;
+        fmt::println("Executing MOV. {:#X} -> reg({})", oper2, (opcode >> 12) & 0xF);
+        break;
+    }
+    default:
+        panic(fmt::format("Unknown ARM data processing instruction! Opcode = {:#b}", data_proc_opcode));
+    }
+    
     if (set_condition_codes)
     {
         // Carry is set by FetchDataProcessingOper2 because this is a logical instruction

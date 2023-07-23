@@ -197,10 +197,14 @@ int Arm7Tdmi::ExecuteArmInstruction(Bus& bus, uint32_t opcode)
     {
         return OpArmDataProc(bus, opcode);
     }
+    else if (((opcode >> 26) & 0b11) == 0b01)
+    {
+        return OpArmSingleDataTransfer(bus, opcode);
+    }
 
 
     // If we get down here then decoding was unable to find an instruction
-    panic(fmt::format("Unknown ARM instruction {:#X}!", opcode));
+    panic(fmt::format("Unknown ARM instruction {0:#X} ({0:#034b})!", opcode));
 }
 
 int Arm7Tdmi::ExecuteThumbInstruction(Bus& bus, uint16_t opcode)
@@ -333,7 +337,7 @@ int Arm7Tdmi::OpArmDataProc(Bus& bus, uint32_t opcode)
 
     uint32_t oper1 = GetRegisterNumber((opcode >> 16) & 0xF);
     uint32_t oper2 = FetchDataProcessingOper2(opcode, true);
-    uint32_t result_reg = GetRegisterNumber((opcode >> 12) & 0xF);
+    uint32_t& result_reg = GetRegisterNumber((opcode >> 12) & 0xF);
     uint32_t result;
 
     switch (data_proc_opcode)
@@ -362,6 +366,59 @@ int Arm7Tdmi::OpArmDataProc(Bus& bus, uint32_t opcode)
         mCurrentPsr.negative = GetBit(result, 31);
         mCurrentPsr.overflow = (GetBit(oper1, 31) != GetBit(oper2, 31)) && GetBit(oper2, 31) == GetBit(result, 31);
     }
+
+    return 1;
+}
+
+int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
+{
+    uint32_t offset;
+    if (GetBit(opcode, 25))
+    {
+        // Register offset
+        uint8_t reg_num = opcode & 0xF;
+        uint32_t shift = (opcode >> 4) & 0xFF;
+        ArmShiftType type = static_cast<ArmShiftType>((shift >> 1) & 0b11);
+        uint8_t shift_reg_num = (shift >> 8) & 0xF;
+        uint8_t shift_amount = static_cast<uint8_t>(GetRegisterNumber(shift_reg_num) & 0xFF);
+        uint32_t shifted = GetRegisterNumber(reg_num);
+
+        switch (type)
+        {
+        case ArmShiftType::ArithRight:
+            shifted = static_cast<int32_t>(shifted) >> shift_amount;
+            break;
+        case ArmShiftType::LogicalRight:
+            shifted = shifted >> shift_amount;
+            break;
+        case ArmShiftType::LogicalLeft:
+            shifted = shift << shift_amount;
+            break;
+        case ArmShiftType::RotRight:
+            shifted = std::rotr(shift, shift_amount);
+            break;
+        default:
+            panic(fmt::format("Unknown shift type! type = {}", static_cast<uint32_t>(type)));
+        };
+
+        offset = shifted;
+    }
+    else
+    {
+        // Immediate offste
+        offset = opcode & 0xFFF;
+    }
+
+    bool post_bit = GetBit(opcode, 24);
+    bool up_bit = GetBit(opcode, 23);
+    bool byte_bit = GetBit(opcode, 22);
+    bool write_back_bit = GetBit(opcode, 21);
+    bool load_bit = GetBit(opcode, 20);
+
+    uint32_t& base_reg = GetRegisterNumber((opcode >> 16) & 0xF);
+    uint32_t& source_dest_reg = GetRegisterNumber((opcode >> 12) & 0xF);
+
+    
 
     return 1;
 }

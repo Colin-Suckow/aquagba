@@ -157,6 +157,7 @@ private:
     // Instructions
     int OpArmBranch(Bus& bus, uint32_t opcode);
     int OpArmDataProc(Bus& bus, uint32_t opcode);
+    int OpArmSingleDataTransfer(Bus& bus, uint32_t opcode);
 
     // Utils
     // Checks cond and returns true if the instruction should be executing. False if should skip

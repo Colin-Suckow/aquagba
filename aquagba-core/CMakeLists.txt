@@ -9,6 +9,8 @@ add_library(
     src/aquagba/bus.hpp
     src/aquagba/bus.cpp
     src/aquagba/util.hpp
+    src/aquagba/system_regs.hpp
+    src/aquagba/system_regs.cpp
 )
 
 target_include_directories(aquagba-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")

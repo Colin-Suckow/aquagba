@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "aquagba/bios_rom.hpp"
+#include "aquagba/system_regs.hpp"
 
 namespace aquagba
 {
@@ -18,6 +19,7 @@ public:
     void UpdateBiosRom(const BiosRom& new_rom);
 private:
     BiosRom mBiosRom;
+    SystemRegs mSystemRegs;
 };
 
 }

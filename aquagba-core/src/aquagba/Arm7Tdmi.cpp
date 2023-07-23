@@ -409,7 +409,7 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
         offset = opcode & 0xFFF;
     }
 
-    bool post_bit = GetBit(opcode, 24);
+    bool pre_bit = GetBit(opcode, 24);
     bool up_bit = GetBit(opcode, 23);
     bool byte_bit = GetBit(opcode, 22);
     bool write_back_bit = GetBit(opcode, 21);
@@ -417,8 +417,74 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
 
     uint32_t& base_reg = GetRegisterNumber((opcode >> 16) & 0xF);
     uint32_t& source_dest_reg = GetRegisterNumber((opcode >> 12) & 0xF);
+    uint32_t addr = base_reg;
 
-    
+    if (pre_bit)
+    {
+        // Pre increment enable
+        if (up_bit)
+        {
+            // Add offset
+            addr += offset;
+        }
+        else
+        {
+            // Subtract offset
+            addr -= offset;
+        }
+    }
+
+    if (load_bit)
+    {
+        if (byte_bit)
+        {
+            // load byte from memory
+            // TODO Handle unaligned reads
+            if (addr % 4 != 0) panic(fmt::format("Unaligned read! Addr {} pc {}", addr, GetRegisterDirect(RegisterName::r15)));
+            source_dest_reg = bus.Read32(addr);
+        }
+        else
+        {
+            // load word from memory
+            source_dest_reg = bus.Read8(addr);
+        }
+    }
+    else
+    {
+        if (byte_bit)
+        {
+            // store byte to memeory
+            panic("Tried to write word, not implemented");
+        }
+        else
+        {
+            // store word to memory
+            // TODO Handle unaligned writes
+            if (addr % 4 != 0) panic(fmt::format("Unaligned write! Addr {} pc {}", addr, GetRegisterDirect(RegisterName::r15)));
+            panic("Tried to write byte, not implemented");
+        }
+    }
+
+    if (!pre_bit)
+    {
+        // Post increment
+        if (up_bit)
+        {
+            // Add offset
+            addr += offset;
+        }
+        else
+        {
+            // Subtract offset
+            addr -= offset;
+        }
+    }
+
+    // Write back if write back bit is set OR if post increment is enabled
+    if (write_back_bit || !pre_bit)
+    {
+        base_reg = addr;
+    }
 
     return 1;
 }

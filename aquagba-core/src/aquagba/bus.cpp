@@ -18,6 +18,10 @@ uint32_t Bus::Read32(uint32_t addr)
     {
         return mBiosRom.Read32(addr);
     }
+    else if (addr >= 0x4000204 && addr <= 0x4000800)
+    {
+        return mSystemRegs.Read32(addr);
+    }
     else
     {
         panic(fmt::format("Tried to read32 invalid address {:#X}", addr));

@@ -4,9 +4,10 @@ AquaGBA is 50% an attempt at learning (old) ARM and 50% at learning basic cmake.
 
 ## Clone and Build Instructions
 
-Clone project with submodules
+Clone project with submodules and cd into it
 ```
 $ git clone --recurse-submodules https://github.com/Colin-Suckow/aquagba
+$ cd aquagba
 ```
 
 Make build directory and cd into it

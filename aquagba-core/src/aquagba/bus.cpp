@@ -22,6 +22,17 @@ uint32_t Bus::Read32(uint32_t addr)
     {
         return mSystemRegs.Read32(addr);
     }
+    else if (addr >= 0x08000000 && addr <= 0x0FFFFFFF)
+    {
+        if (mGamepak)
+        {
+            return mGamepak->Read32(addr);
+        }
+        else
+        {
+            panic("Tried to read from non existant gamepak!");
+        }
+    }
     else
     {
         panic(fmt::format("Tried to read32 invalid address {:#X}", addr));
@@ -91,4 +102,14 @@ void Bus::Write8(uint32_t addr, uint8_t val)
 void Bus::UpdateBiosRom(const BiosRom& new_rom)
 {
     mBiosRom = new_rom;
+}
+
+void Bus::RemoveGamepak()
+{
+    mGamepak.reset();
+}
+
+void Bus::InsertGamepak(const Gamepak& gamepak)
+{
+    mGamepak = gamepak;
 }

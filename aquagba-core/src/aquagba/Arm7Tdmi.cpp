@@ -611,4 +611,6 @@ int Arm7Tdmi::OpArmMsrReg(Bus& bus, uint32_t opcode)
         // use the current psr
         mCurrentPsr = ProgramStatus::FromBinary(source);
     }
+
+    return 1;
 }

@@ -10,6 +10,7 @@ namespace aquagba
 
 enum class RegisterName
 {
+    r0,
     r1,
     r2,
     r3,

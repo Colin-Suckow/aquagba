@@ -17,6 +17,7 @@ void Arm7Tdmi::Reset()
     GetRegisterDirect(RegisterName::r15) = GetRegisterDirect(RegisterName::r14_svc);
 
     // Write old PSR to spsr_svc
+    // TODO Change this to use the actual cpsr state variables
     GetRegisterDirect(RegisterName::spsr_svc) = GetRegisterDirect(RegisterName::cpsr);
 
     // Enter supervisor mode
@@ -141,6 +142,27 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
 {
     int cycles;
     uint32_t current_pc = GetRegisterDirect(RegisterName::r15);
+
+    // Trace logs here
+    for (int i = 0; i < 16; i++)
+    {
+        // Add instruction offset to simulate pipeline
+        uint32_t offset = 0;
+        if (i == 15)
+        {
+            if (mCurrentPsr.state == OperatingState::Arm)
+            {
+                offset = 4;
+            }
+            else
+            {
+                offset = 2;
+            }
+        }
+        fmt::print("{:08X} ", GetRegisterNumber(i) + offset);
+    }
+    fmt::print("cpsr {:08X}\n", mCurrentPsr.AsBinary());
+
     // Fetch next opcode
     if (mCurrentPsr.state == OperatingState::Arm)
     {
@@ -150,14 +172,14 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
         // Check the cond field and execute if true
         if (ArmCheckCond((opcode >> 28) & 0b1111))
         {
-            fmt::println("Executing ARM instruction at pc {:#X}... opcode = {:#X}", current_pc, opcode);
+            ////fmt::println("Executing ARM instruction at pc {:#X}... opcode = {:#X}", current_pc + 4, opcode);
 
             // Execute
             cycles = ExecuteArmInstruction(bus, opcode);
         }
         else
         {
-            fmt::println("Skipping ARM instruction at {:#X} because cond was false...", current_pc);
+            //fmt::println("Skipping ARM instruction at {:#X} because cond was false...", current_pc + 4);
         }
     }
     else
@@ -165,7 +187,7 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
         // Fetch a 16 bit THUMB instruction
         uint16_t opcode = bus.Read16(current_pc);
 
-        fmt::println("Executing THUMB instruction at pc {:#X}...", current_pc);
+        ////fmt::println("Executing THUMB instruction at pc {:#X}...", current_pc);
 
         // Execute
         cycles = ExecuteThumbInstruction(bus, opcode);
@@ -183,7 +205,7 @@ int Arm7Tdmi::RunNextInstruction(Bus& bus)
     {
         GetRegisterDirect(RegisterName::r15) = current_pc + 2;
     }
-    
+
     return cycles;
 }
 
@@ -327,6 +349,20 @@ uint32_t Arm7Tdmi::FetchDataProcessingOper2(const uint32_t opcode, const bool se
         };
 
         oper2 = shifted;
+
+        // If r15, the Program Counter, was used we need to add an offset to simulate the pipeline
+        // See 4.5.5 of thumb instruction set info doc
+        if (reg_num == 15)
+        {
+            if (register_shift)
+            {
+                oper2 += 12;
+            }
+            else
+            {
+                oper2 += 8;
+            }
+        }
     }
     return oper2;
 }
@@ -347,7 +383,7 @@ int Arm7Tdmi::OpArmBranch(Bus& bus, uint32_t opcode)
         GetRegisterDirect(RegisterName::r14) = old_pc + 4;
     }
 
-    fmt::println("Branched to {:#X}", new_pc + 8);
+    //fmt::println("Branched to {:#X}", new_pc + 8);
 
     return 1;
 }
@@ -367,33 +403,34 @@ int Arm7Tdmi::OpArmDataProc(Bus& bus, uint32_t opcode)
     case 0b1010:
     {
         result = oper1 - oper2;
-        fmt::println("Executing CMP. {} - {} = {}", oper1, oper2, result);
+        //fmt::println("Executing CMP. {} - {} = {}", oper1, oper2, result);
         break;
     }
     case 0b1101:
     {
         result = oper2;
         result_reg = oper2;
-        fmt::println("Executing MOV. {:#X} -> reg({})", oper2, (opcode >> 12) & 0xF);
+        //fmt::println("Executing MOV. {:#X} -> reg({})", oper2, (opcode >> 12) & 0xF);
         break;
     }
     case 0b1001:
     {
         result = oper1 ^ oper2;
-        fmt::println("Executing TEQ. {} ^ {} = {}", oper1, oper2, result);
+        //fmt::println("Executing TEQ. {} ^ {} = {}", oper1, oper2, result);
         break;
     }
     case 0b1011:
     {
         result = oper1 + oper2;
-        fmt::println("Executing CMN. {} + {} = {}", oper1, oper2, result);
+        //fmt::println("Executing CMN. {} + {} = {}", oper1, oper2, result);
         break;
     }
     case 0b0100:
     {
         result = oper1 + oper2;
+        //fmt::println("Old ADD reg_val {:#X}", result_reg);
         result_reg = result;
-        fmt::println("Executing ADD. r{} {} + {} = r{} {}", (opcode >> 16) & 0xF, oper1, oper2, (opcode >> 12) & 0xF, result);
+        //fmt::println("Executing ADD. r{} {} + {} = r{} {}", (opcode >> 16) & 0xF, oper1, oper2, (opcode >> 12) & 0xF, result);
         break;
     }
     default:
@@ -481,6 +518,7 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
         {
             // load byte from memory
             // TODO Handle unaligned reads
+            //fmt::println("Loaded byte from {:#X} into reg {}", addr, (opcode >> 12) & 0xF);
             source_dest_reg = bus.Read8(addr);
         }
         else
@@ -488,6 +526,7 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
             // load word from memory
             // TODO Handle unaligned reads
             if (addr % 4 != 0) panic(fmt::format("Unaligned read! Addr {} pc {}", addr, GetRegisterDirect(RegisterName::r15)));
+            //fmt::println("Loaded word from {:#X} into reg {}", addr, (opcode >> 12) & 0xF);
             source_dest_reg = bus.Read32(addr);
         }
     }
@@ -496,6 +535,7 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
         if (byte_bit)
         {
             // store byte to memeory
+            //fmt::println("Stored byte into {:#X} from reg {}", addr, (opcode >> 12) & 0xF);
             bus.Write8(addr, source_dest_reg & 0xF);
         }
         else
@@ -503,6 +543,7 @@ int Arm7Tdmi::OpArmSingleDataTransfer(Bus& bus, uint32_t opcode)
             // store word to memory
             // TODO Handle unaligned writes
             if (addr % 4 != 0) panic(fmt::format("Unaligned write! Addr {} pc {}", addr, GetRegisterDirect(RegisterName::r15)));
+            //fmt::println("Stored byte into {:#X} from reg {}", addr, (opcode >> 12) & 0xF);
             bus.Write32(addr, source_dest_reg);
         }
     }
@@ -557,6 +598,8 @@ int Arm7Tdmi::OpArmMsrReg(Bus& bus, uint32_t opcode)
 {
     bool dest_spsr = GetBit(opcode, 22);
     uint32_t source = GetRegisterNumber(opcode & 0xF);
+
+    //fmt::println("Saved MSR");
 
     if (dest_spsr)
     {

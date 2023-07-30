@@ -11,6 +11,8 @@ add_library(
     src/aquagba/util.hpp
     src/aquagba/system_regs.hpp
     src/aquagba/system_regs.cpp
+    src/aquagba/gamepak.hpp
+    src/aquagba/gamepak.cpp
 )
 
 target_include_directories(aquagba-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
